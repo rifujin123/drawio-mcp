@@ -60,9 +60,7 @@ describe('ActivityDiagramBuilder', () => {
     // Outer ring — white with thick border
     expect(xml).toContain('strokeWidth=3');
 
-    // Inner dot — filled circle (same style as start)
-    // End node creates 2 cells: outer ring + inner dot
-    // With 1 start + 1 end + 1 action, we get at least 2 filled circles
+    // Inner dot — filled circle
     const filledCircles = (xml.match(/fillColor=#333333/g) || []).length;
     expect(filledCircles).toBeGreaterThanOrEqual(2);
   });

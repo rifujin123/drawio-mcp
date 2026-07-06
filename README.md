@@ -272,35 +272,64 @@ Kết quả: Layout theo topological levels, backward edges có waypoints, decis
 ### 4. Sequence Diagram
 
 ````
-Vẽ sequence diagram cho chức năng đăng nhập:
+Vẽ sequence diagram cho quy trình rút tiền ATM:
+
+Title: "ATM Transaction"
 
 Participants:
 - "User" (type: actor)
-- "LoginPage" (type: boundary)
-- "AuthController" (type: control)
-- "UserService" (type: control)
-- "Database" (type: entity)
+- "Cây ATM" (type: boundary)
+- "Server Ngân Hàng" (type: entity)
 
 Messages:
-- User → LoginPage: "enterCredentials()" (synchronous, order: 1)
-- LoginPage → AuthController: "login(email, password)" (synchronous, order: 2)
-- AuthController → AuthController: "validateInput()" (synchronous, order: 3)  # self-loop
-- AuthController → UserService: "findByEmail()" (synchronous, order: 4)
-- UserService → Database: "query()" (synchronous, order: 5)
-- Database → UserService: "userData" (return, order: 6)
-- UserService → AuthController: "user" (return, order: 7)
-- AuthController → AuthController: "verifyPassword()" (synchronous, order: 8)  # self-loop
-- AuthController → LoginPage: "authResult" (return, order: 9)
-- LoginPage → User: "showDashboard()" (return, order: 10)
+# ── Authentication ──
+- User → Cây ATM: Nhập thẻ (asynchronous, order: 1)
+- Cây ATM → User: Yêu cầu mã PIN (asynchronous, order: 2)
+- User → Cây ATM: Nhập mã PIN (asynchronous, order: 3)
+- Cây ATM → Server Ngân Hàng: Kiểm tra mã PIN (synchronous, order: 4)
+- Server Ngân Hàng → Cây ATM: Xác nhận mã PIN (return, order: 5)
+
+# ── Menu ──
+- Cây ATM → User: Hiển thị danh sách lựa chọn (asynchronous, order: 6)
+- User → Cây ATM: Nhập lựa chọn (asynchronous, order: 7)
+
+# ── Alt: Kiểm tra số dư / Rút tiền / Huỷ ──
+# (gán fragment cho mọi message trong block)
+- Cây ATM → Server Ngân Hàng: Lấy số dư (synchronous, order: 8)         # fragment: alt, condition: "Kiểm tra số dư / Rút tiền / Huỷ", fromOrder: 8, toOrder: 20
+- Server Ngân Hàng → Cây ATM: Trả về số dư (return, order: 9)
+- Cây ATM → User: Hiển thị số dư (asynchronous, order: 10)
+- Cây ATM → User: Yêu cầu nhập số tiền (asynchronous, order: 11)
+- User → Cây ATM: Nhập số tiền (asynchronous, order: 12)
+- Cây ATM → Server Ngân Hàng: Kiểm tra số dư (synchronous, order: 13)
+- Server Ngân Hàng → Cây ATM: Trả về số dư (return, order: 14)
+
+# ── Nested Alt: Số dư > Số tiền / Số dư < Số tiền ──
+- Cây ATM → Server Ngân Hàng: Cập nhật số dư (synchronous, order: 15)   # fragment: alt, condition: "Đủ tiền / Không đủ", fromOrder: 15, toOrder: 19
+- Server Ngân Hàng → Cây ATM: Số dư đã được cập nhật (return, order: 16)
+- Cây ATM → User: Thông báo "Hãy nhận tiền" (asynchronous, order: 17)
+- User → Cây ATM: Nhận tiền (asynchronous, order: 18)
+- Cây ATM → User: Thông báo "Số dư không đủ" (asynchronous, order: 19)
+
+# ── Huỷ ──
+- Cây ATM → User: Thông báo "Huỷ giao dịch" (asynchronous, order: 20)
+
+# ── Final ──
+- Cây ATM → User: In hóa đơn (asynchronous, order: 21)
+- Cây ATM → User: Trả thẻ (asynchronous, order: 22)
+- User → Cây ATM: Nhận lại thẻ (asynchronous, order: 23)
+- Cây ATM → User: Hiển thị cảm ơn (asynchronous, order: 24)
 ````
 
-Kết quả: Participants header ngang trên cùng, lifelines dọc, activation bars xám, self-loops vẽ U-shape bên phải.
+Kết quả: Participants header ngang trên cùng, lifelines dọc, activation bars rỗng viền đen, self-loops vẽ U-shape bên phải.
 
 **Mẹo:** 
 - `type: "actor"` → không có activation bar (đúng UML)
 - `type: "boundary"` / `"control"` / `"entity"` → có màu khác nhau
+- `type: "synchronous"` → mũi tên đặc, đường thẳng (sender chờ)
+- `type: "asynchronous"` → mũi tên mở (hói), đường thẳng
 - `type: "return"` → dashed line, gray, open arrow
-- `type: "asynchronous"` → dashed line, open arrow
+- **Fragment** gán vào message đầu tiên của block với `fromOrder`=order đầu, `toOrder`=order cuối
+- **Fragment lồng nhau** — tạo fragment thứ 2 với `fromOrder`/`toOrder` bên trong fragment ngoài
 
 ---
 

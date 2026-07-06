@@ -16,8 +16,10 @@ import {
   FRAGMENT_STYLE,
 } from '../utils/styles.js';
 
-const PARTICIPANT_W = 140;
-const PARTICIPANT_H = 50;
+const PARTICIPANT_W = 90;
+const PARTICIPANT_H = 55;
+const ACTOR_W = 40;
+const ACTOR_H = 60;
 const MESSAGE_Y_GAP = 60;
 const MARGIN = 60;
 const PARTICIPANT_GAP = 100;
@@ -25,6 +27,9 @@ const ACTIVATION_W = 16;
 const ACTIVATION_PAD = 10;
 const FIRST_MESSAGE_OFFSET = 40;
 const LIFELINE_EXTRA = 2;
+const FRAGMENT_PAD = 12;
+const FRAGMENT_TAB_W = 55;
+const FRAGMENT_TAB_H = 22;
 
 /**
  * Builder for UML Sequence Diagrams.
@@ -52,7 +57,9 @@ export class SequenceDiagramBuilder extends BaseBuilder {
 
     for (const p of participants) {
       const style = this.getParticipantStyle(p);
-      const id = this.addVertex(p.name, style, 0, 0, PARTICIPANT_W, PARTICIPANT_H);
+      const pw = this.getParticipantWidth(p);
+      const ph = this.getParticipantHeight(p);
+      const id = this.addVertex(p.name, style, 0, 0, pw, ph);
       this.participantIds.set(p.name, id);
     }
 
@@ -71,6 +78,13 @@ export class SequenceDiagramBuilder extends BaseBuilder {
     }
   }
 
+  private getParticipantWidth(p: Participant): number {
+    return p.type === 'actor' ? ACTOR_W : PARTICIPANT_W;
+  }
+  private getParticipantHeight(p: Participant): number {
+    return p.type === 'actor' ? ACTOR_H : PARTICIPANT_H;
+  }
+
   /**
    * Phase 2: Position all elements, create message edges and activation bars.
    */
@@ -80,32 +94,40 @@ export class SequenceDiagramBuilder extends BaseBuilder {
     const sortedMessages = [...messages].sort((a, b) => a.order - b.order);
 
     // ── Calculate X positions ──
-    const totalContentWidth = count * PARTICIPANT_W + (count - 1) * PARTICIPANT_GAP;
+    let totalContentWidth = 0;
+    for (let i = 0; i < count; i++) {
+      totalContentWidth += this.getParticipantWidth(participants[i]);
+      if (i < count - 1) totalContentWidth += PARTICIPANT_GAP;
+    }
     const canvasWidth = Math.max(totalContentWidth + MARGIN * 2, 800);
-    const startX = MARGIN + (canvasWidth - MARGIN * 2 - totalContentWidth) / 2;
+    let cursorX = MARGIN + (canvasWidth - MARGIN * 2 - totalContentWidth) / 2;
 
     // ── Position participant headers ──
     participants.forEach((p, i) => {
       const id = this.participantIds.get(p.name);
       if (!id) return;
 
-      const x = startX + i * (PARTICIPANT_W + PARTICIPANT_GAP);
-      this.participantX.set(p.name, x + PARTICIPANT_W / 2);
+      const pw = this.getParticipantWidth(p);
+      const ph = this.getParticipantHeight(p);
+      const x = cursorX;
+      this.participantX.set(p.name, x + pw / 2);
       this.participantIndex.set(p.name, i);
+      cursorX += pw + PARTICIPANT_GAP;
 
       const cell = this.cells.find((c) => c.id === id);
       if (cell?.geometry) {
         cell.geometry.x = x;
         cell.geometry.y = MARGIN;
-        cell.geometry.width = PARTICIPANT_W;
-        cell.geometry.height = PARTICIPANT_H;
+        cell.geometry.width = pw;
+        cell.geometry.height = ph;
       }
     });
 
-    // ── Calculate Y positions for messages ──
-    const firstMessageY = MARGIN + PARTICIPANT_H + FIRST_MESSAGE_OFFSET;
+    // Calculate Y positions for messages
+    const maxPH = Math.max(...participants.map(p => this.getParticipantHeight(p)));
+    const firstMessageY = MARGIN + maxPH + FIRST_MESSAGE_OFFSET;
 
-    // ── Position lifeline bottoms ──
+    // Position lifeline bottoms
     const lastMsgIdx = sortedMessages.length - 1;
     const bottomY = firstMessageY + (lastMsgIdx + LIFELINE_EXTRA) * MESSAGE_Y_GAP;
 
@@ -122,11 +144,36 @@ export class SequenceDiagramBuilder extends BaseBuilder {
       }
     }
 
-    // ── Track activation ranges per participant ──
-    // first/last are indices into sortedMessages
-    const activationRanges = new Map<string, { first: number; last: number }>();
+    // Activation segments per participant (stack-based)
+    interface ActivationSegment {
+      startMsgIdx: number;
+      endMsgIdx: number;
+      depth: number;
+    }
+    // Receiving sync/create = push. Sending return = pop.
+    // Depth tracks nesting level for bar width.
+    const activationSegments = new Map<string, ActivationSegment[]>();
+    for (const p of participants) {
+      if (p.type === 'actor') continue;
+      const stack: number[] = [];
+      const segments: ActivationSegment[] = [];
+      sortedMessages.forEach((msg, i) => {
+        if (msg.to === p.name && msg.from !== p.name && (msg.type === 'synchronous' || msg.type === 'create')) {
+          stack.push(i);
+        }
+        if (msg.from === p.name && msg.type === 'return' && stack.length > 0) {
+          const startIdx = stack.pop()!;
+          segments.push({ startMsgIdx: startIdx, endMsgIdx: i, depth: stack.length });
+        }
+      });
+      while (stack.length > 0) {
+        const startIdx = stack.pop()!;
+        segments.push({ startMsgIdx: startIdx, endMsgIdx: sortedMessages.length - 1, depth: stack.length });
+      }
+      activationSegments.set(p.name, segments);
+    }
 
-    // ── Create messages ──
+    // Create messages
     sortedMessages.forEach((msg, i) => {
       const y = firstMessageY + i * MESSAGE_Y_GAP;
 
@@ -137,16 +184,8 @@ export class SequenceDiagramBuilder extends BaseBuilder {
       const style = this.getMessageStyle(msg.type ?? 'synchronous');
       const label = msg.label;
 
-      // Update activation ranges for both participants
-      for (const name of [msg.from, msg.to]) {
-        const range = activationRanges.get(name) ?? { first: i, last: i };
-        if (i < range.first) range.first = i;
-        if (i > range.last) range.last = i;
-        activationRanges.set(name, range);
-      }
-
       if (msg.from === msg.to) {
-        // ── Self-loop message (e.g. "Recuperar Senha") ──
+        // Self-loop message
         const headerId = this.participantIds.get(msg.from);
         if (headerId) {
           this.createSelfLoop(msg.label, style, headerId, y, fromX);
@@ -165,22 +204,53 @@ export class SequenceDiagramBuilder extends BaseBuilder {
         );
         this.addEdge(label, style, fromAnchor, toAnchor);
       }
+
+      // Destroy marker: X at target lifeline
+      if (msg.type === 'destroy' && msg.from !== msg.to) {
+        const destroyStyle = 'text;html=1;align=center;verticalAlign=middle;fontSize=16;fontStyle=2;fillColor=none;strokeColor=none;';
+        this.addVertex('✕', destroyStyle, toX - 8, y - 8, 16, 16);
+      }
     });
 
-    // ── Create activation bars ──
-    for (const [name, range] of activationRanges) {
-      // Actor type participants usually don't have activation bars in UML
-      const participant = this.input.participants.find((p) => p.name === name);
-      if (participant?.type === 'actor') continue;
-
+    // Create activation bars from segments
+    for (const [name, segments] of activationSegments) {
       const cx = this.participantX.get(name);
       if (!cx) continue;
+      for (const seg of segments) {
+        const barW = Math.max(ACTIVATION_W - seg.depth * 3, 6);
+        const startY = firstMessageY + seg.startMsgIdx * MESSAGE_Y_GAP - ACTIVATION_PAD;
+        const endY = firstMessageY + seg.endMsgIdx * MESSAGE_Y_GAP + ACTIVATION_PAD;
+        const height = Math.max(endY - startY, ACTIVATION_PAD * 2);
+        this.addVertex('', ACTIVATION_STYLE, cx - barW / 2, startY, barW, height);
+      }
+    }
 
-      const startY = firstMessageY + range.first * MESSAGE_Y_GAP - ACTIVATION_PAD;
-      const endY = firstMessageY + range.last * MESSAGE_Y_GAP + ACTIVATION_PAD;
-      const height = Math.max(endY - startY, ACTIVATION_PAD * 2);
+    // Create combined fragments (alt, loop, opt, par, etc.)
+    const fragmentGroups = new Map<string, { type: string; condition?: string; minOrder: number; maxOrder: number }>();
+    for (const msg of sortedMessages) {
+      if (msg.fragment) {
+        const key = `${msg.fragment.type}-${msg.fragment.fromOrder}-${msg.fragment.toOrder}`;
+        if (!fragmentGroups.has(key)) {
+          fragmentGroups.set(key, {
+            type: msg.fragment.type,
+            condition: msg.fragment.condition,
+            minOrder: msg.fragment.fromOrder,
+            maxOrder: msg.fragment.toOrder,
+          });
+        }
+      }
+    }
+    for (const [, group] of fragmentGroups) {
+      const startY = firstMessageY + group.minOrder * MESSAGE_Y_GAP - FRAGMENT_PAD;
+      const endY = firstMessageY + (group.maxOrder + 1) * MESSAGE_Y_GAP + FRAGMENT_PAD;
+      const fh = endY - startY;
+      const fx = MARGIN;
+      const fw = canvasWidth - MARGIN * 2;
+      this.addVertex('', FRAGMENT_STYLE, fx, startY, fw, fh);
 
-      this.addVertex('', ACTIVATION_STYLE, cx - ACTIVATION_W / 2, startY, ACTIVATION_W, height);
+      // Label tab at top-left corner
+      const label = group.condition ? `${group.type} [${group.condition}]` : group.type;
+      this.addVertex(label, 'rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#444444;fontFamily=Helvetica;fontSize=12;fontStyle=1;', fx, startY, FRAGMENT_TAB_W, FRAGMENT_TAB_H);
     }
   }
 

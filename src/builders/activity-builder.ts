@@ -14,7 +14,7 @@ import {
 // ─── Constants ──────────────────────────────────────────────────
 
 const START_SIZE = 30;
-const END_OUTER_SIZE = 40;
+const END_SIZE = 34;
 const END_INNER_SIZE = 10;
 const ACTION_W = 180;
 const ACTION_H = 50;
@@ -30,8 +30,9 @@ const LEVEL_HEIGHT = 90;    // ACTION_H + NODE_GAP_Y + extra margin
 const MARGIN = 60;
 const SWIMLANE_WIDTH = 260;
 const SWIMLANE_HEADER_H = 40;
-const BACKWARD_OFFSET_X = 30;  // how far right the backward waypoint goes
+const BACKWARD_OFFSET_X = 30;
 const BACKWARD_PADDING = 10;
+const CANVAS_DEFAULT_W = 800;
 
 // ─── Helpers ────────────────────────────────────────────────────
 
@@ -87,7 +88,7 @@ function getNodeDimensions(node: ActivityNode): { w: number; h: number } {
     case 'start':
       return { w: START_SIZE, h: START_SIZE };
     case 'end':
-      return { w: END_OUTER_SIZE, h: END_OUTER_SIZE };
+      return { w: END_SIZE, h: END_SIZE };
     case 'decision':
       return { w: DECISION_W, h: DECISION_H };
     case 'merge':
@@ -161,22 +162,38 @@ export class ActivityDiagramBuilder extends BaseBuilder {
     // Sort levels
     const sortedLevels = [...levelGroups.keys()].sort((a, b) => a - b);
 
+    // Calculate canvas width from widest level
+    let canvasWidth = CANVAS_DEFAULT_W;
+    for (const lvl of sortedLevels) {
+      const group = levelGroups.get(lvl)!;
+      let rowW = 0;
+      for (const node of group) {
+        const { w } = getNodeDimensions(node);
+        rowW += w + NODE_GAP_X;
+      }
+      rowW -= NODE_GAP_X; // last item has no trailing gap
+      canvasWidth = Math.max(canvasWidth, rowW + MARGIN * 2);
+    }
+
     for (const lvl of sortedLevels) {
       const group = levelGroups.get(lvl)!;
       const y = MARGIN + lvl * LEVEL_HEIGHT;
 
-      if (group.some((n) => n.type === 'decision' || n.type === 'merge')) {
-        // Decision row: center each decision, no col-gap needed since usually one per level
-        group.forEach((node) => {
-          const { w, h } = getNodeDimensions(node);
-          this.positionNode(node, MARGIN + ACTION_W / 2 - w / 2 + 20, y, w, h);
-        });
-      } else {
-        // Action/other row
-        group.forEach((node) => {
-          const { w, h } = getNodeDimensions(node);
-          this.positionNode(node, MARGIN + 20, y, w, h);
-        });
+      // Calculate total width of this row
+      let rowW = 0;
+      for (const node of group) {
+        const { w } = getNodeDimensions(node);
+        rowW += w + NODE_GAP_X;
+      }
+      rowW -= NODE_GAP_X;
+
+      const startX = (canvasWidth - rowW) / 2;
+      let cursorX = startX;
+
+      for (const node of group) {
+        const { w, h } = getNodeDimensions(node);
+        this.positionNode(node, cursorX, y, w, h);
+        cursorX += w + NODE_GAP_X;
       }
     }
   }
@@ -223,6 +240,15 @@ export class ActivityDiagramBuilder extends BaseBuilder {
   // ─── Edge creation ─────────────────────────────────────────────
 
   private createFlows(flows: ActivityFlow[]): void {
+    // Find rightmost node edge for backward routing
+    let rightmostEdge = 0;
+    for (const cell of this.cells) {
+      if (cell.geometry && !cell.edge) {
+        const right = cell.geometry.x + cell.geometry.width;
+        if (right > rightmostEdge) rightmostEdge = right;
+      }
+    }
+
     for (const flow of flows) {
       const fromId = this.nodeIds.get(flow.from);
       const toId = this.nodeIds.get(flow.to);
@@ -252,22 +278,20 @@ export class ActivityDiagramBuilder extends BaseBuilder {
         ];
         this.addEdgeWithPoints(label, ACTIVITY_FLOW_STYLE, fromId, toId, waypoints);
       } else if (fromLevel > toLevel || (fromLevel === toLevel && this.isBackwardByPosition(fromCell, toCell))) {
-        // ── Backward edge (loop) — route around right side ──
+        // Backward edge (loop) — route around right side
         const fromRight = fromCell.geometry.x + fromCell.geometry.width;
         const toX = toCell.geometry.x;
-        const toBottom = toCell.geometry.y + toCell.geometry.height;
-        const waypointRight = fromRight + BACKWARD_OFFSET_X;
-        const targetRight = Math.max(fromRight, toX + BACKWARD_OFFSET_X + 40) + BACKWARD_OFFSET_X;
+        const targetRight = rightmostEdge + BACKWARD_OFFSET_X + 20;
 
         const waypoints = [
           { x: fromRight, y: fromCell.geometry.y + fromCell.geometry.height / 2 },
           { x: targetRight, y: fromCell.geometry.y + fromCell.geometry.height / 2 },
-          { x: targetRight, y: toBottom + BACKWARD_PADDING },
-          { x: toX - 5, y: toBottom + BACKWARD_PADDING },
+          { x: targetRight, y: toCell.geometry.y - BACKWARD_PADDING },
+          { x: toX - 5, y: toCell.geometry.y - BACKWARD_PADDING },
         ];
         this.addEdgeWithPoints(label, ACTIVITY_FLOW_STYLE, fromId, toId, waypoints);
       } else {
-        // ── Normal forward edge ──
+        // Normal forward edge
         this.addEdge(label, ACTIVITY_FLOW_STYLE, fromId, toId);
       }
     }
@@ -290,13 +314,11 @@ export class ActivityDiagramBuilder extends BaseBuilder {
         return this.addVertex('', START_NODE_STYLE, 0, 0, START_SIZE, START_SIZE);
 
       case 'end': {
-        // Bullseye: outer white circle + inner filled dot
-        const outerId = this.addVertex('', END_NODE_STYLE, 0, 0, END_OUTER_SIZE, END_OUTER_SIZE);
+        const outerId = this.addVertex('', END_NODE_STYLE, 0, 0, END_SIZE, END_SIZE);
         const innerId = this.addVertex('', END_INNER_STYLE, 0, 0, END_INNER_SIZE, END_INNER_SIZE);
         this.endInnerIds.set(node.id, innerId);
         return outerId;
       }
-
       case 'action':
         return this.addVertex(node.label ?? '', ACTION_STYLE, 0, 0, ACTION_W, ACTION_H);
 
