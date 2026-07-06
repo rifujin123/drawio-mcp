@@ -161,8 +161,20 @@ export class ClassDiagramBuilder extends BaseBuilder {
     if (!sourceId || !targetId) return '';
 
     const style = this.getRelationStyle(rel.type);
-    const label = rel.label ?? '';
-    return this.addEdge(label, style, sourceId, targetId);
+    const centerLabel = rel.label ?? '';
+
+    // Create the edge (center label if any)
+    const edgeId = this.addEdge(centerLabel, style, sourceId, targetId);
+
+    // Add multiplicity labels at source/target ends
+    if (rel.fromLabel) {
+      this.addEdgeLabel(edgeId, rel.fromLabel, -1, 0, { x: 0, y: -10 });
+    }
+    if (rel.toLabel) {
+      this.addEdgeLabel(edgeId, rel.toLabel, 1, 0, { x: 0, y: -10 });
+    }
+
+    return edgeId;
   }
 
   private getRelationStyle(type: string): string {

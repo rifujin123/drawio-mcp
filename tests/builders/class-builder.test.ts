@@ -95,4 +95,48 @@ describe('ClassDiagramBuilder', () => {
     expect(xml).toContain('<root>');
     expect(xml).toContain('</root>');
   });
+
+  it('should render fromLabel as source multiplicity label', () => {
+    const input: ClassDiagramInput = {
+      classes: [
+        { name: 'A', attributes: [], methods: [] },
+        { name: 'B', attributes: [], methods: [] },
+      ],
+      relationships: [
+        { from: 'A', to: 'B', type: 'association', fromLabel: '1', toLabel: '0..*' },
+      ],
+    };
+    const builder = new ClassDiagramBuilder(input);
+    builder.build();
+    const xml = builder.serialize();
+
+    // Should have edge label cells with multiplicity values
+    expect(xml).toContain('value="1"');
+    expect(xml).toContain('value="0..*"');
+    // Edge label uses edgeLabel style
+    expect(xml).toContain('edgeLabel');
+    // Should have offset point
+    expect(xml).toContain('as="offset"');
+  });
+
+  it('should render edge labels as children of edge cell', () => {
+    const input: ClassDiagramInput = {
+      classes: [
+        { name: 'A', attributes: [], methods: [] },
+        { name: 'B', attributes: [], methods: [] },
+      ],
+      relationships: [
+        { from: 'A', to: 'B', type: 'composition', fromLabel: '1', toLabel: '*' },
+      ],
+    };
+    const builder = new ClassDiagramBuilder(input);
+    builder.build();
+    const xml = builder.serialize();
+
+    // Edge label cells should have connectable="0"
+    expect(xml).toContain('connectable="0"');
+    // Should have x="-1" for source label and x="1" for target label
+    expect(xml).toContain('x="-1"');
+    expect(xml).toContain('x="1"');
+  });
 });

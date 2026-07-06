@@ -14,6 +14,7 @@ export interface mxCell {
   parent: string;
   source?: string;
   target?: string;
+  connectable?: boolean;
   geometry?: mxGeometry;
 }
 
@@ -24,6 +25,7 @@ export interface mxGeometry {
   height: number;
   relative: boolean;
   points?: { x: number; y: number }[];
+  offset?: { x: number; y: number };
 }
 
 export abstract class BaseBuilder {
@@ -108,6 +110,28 @@ export abstract class BaseBuilder {
     return id;
   }
 
+  /** Add an edge label (text positioned along an edge) */
+  protected addEdgeLabel(
+    parentEdgeId: string,
+    value: string,
+    x: number,
+    y: number,
+    offset?: { x: number; y: number },
+  ): string {
+    const id = this.nextId();
+    this.cells.push({
+      id,
+      value,
+      style: 'edgeLabel;html=1;align=center;verticalAlign=middle;resizable=0;points=[];fontSize=11;',
+      vertex: true,
+      edge: false,
+      parent: parentEdgeId,
+      connectable: false,
+      geometry: { x, y, width: 0, height: 0, relative: true, offset },
+    });
+    return id;
+  }
+
   /** Serialize all cells to mxGraphModel XML */
   serialize(): string {
     const cellsXml = this.cells
@@ -132,6 +156,7 @@ export abstract class BaseBuilder {
     if (cell.edge) attrs.push('edge="1"');
     if (cell.source) attrs.push(`source="${cell.source}"`);
     if (cell.target) attrs.push(`target="${cell.target}"`);
+    if (cell.connectable === false) attrs.push('connectable="0"');
 
     const geom = cell.geometry;
     if (!geom) {
@@ -141,6 +166,11 @@ export abstract class BaseBuilder {
     const geomAttrs: string[] = [];
     if (!geom.relative) {
       geomAttrs.push(`x="${geom.x}"`, `y="${geom.y}"`, `width="${geom.width}"`, `height="${geom.height}"`);
+    } else {
+      // For relative geometry, only emit x,y if non-zero (edge labels need this)
+      if (geom.x !== 0 || geom.y !== 0) {
+        geomAttrs.push(`x="${geom.x}"`, `y="${geom.y}"`);
+      }
     }
     geomAttrs.push(`as="geometry"`);
     if (geom.relative) geomAttrs.push('relative="1"');
@@ -153,8 +183,14 @@ export abstract class BaseBuilder {
         '\n        </Array>';
     }
 
+    // Serialize offset point (for edge labels)
+    let offsetXml = '';
+    if (geom.offset) {
+      offsetXml = `\n        <mxPoint x="${geom.offset.x}" y="${geom.offset.y}" as="offset" />`;
+    }
+
     return `<mxCell ${attrs.join(' ')}>
-      <mxGeometry ${geomAttrs.join(' ')}>${pointsXml}
+      <mxGeometry ${geomAttrs.join(' ')}>${pointsXml}${offsetXml}
       </mxGeometry>
     </mxCell>`;
   }

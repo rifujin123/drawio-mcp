@@ -20,6 +20,7 @@ export interface ParsedCell {
   parent?: string;
   source?: string;
   target?: string;
+  connectable?: boolean;
   geometry?: ParsedGeometry;
 }
 
@@ -30,6 +31,7 @@ export interface ParsedGeometry {
   height?: number;
   relative?: boolean;
   points?: { x: number; y: number }[];
+  offset?: { x: number; y: number };
 }
 
 export interface DrawioFileData {
@@ -229,6 +231,12 @@ function parseGeometry(body: string): ParsedGeometry | undefined {
     if (points.length > 0) geom.points = points;
   }
 
+  // Parse offset point for edge labels: <mxPoint x="0" y="-10" as="offset" />
+  const offsetMatch = gBody.match(/<mxPoint\s+x="([\d.-]+)"\s+y="([\d.-]+)"\s+as="offset"\s*\/>/);
+  if (offsetMatch) {
+    geom.offset = { x: parseFloat(offsetMatch[1]), y: parseFloat(offsetMatch[2]) };
+  }
+
   return geom;
 }
 
@@ -244,6 +252,7 @@ function serializeCellXml(cell: ParsedCell): string {
   if (cell.edge) attrs.push('edge="1"');
   if (cell.source) attrs.push(`source="${cell.source}"`);
   if (cell.target) attrs.push(`target="${cell.target}"`);
+  if (cell.connectable === false) attrs.push('connectable="0"');
 
   const geom = cell.geometry;
   if (!geom) {
@@ -256,6 +265,10 @@ function serializeCellXml(cell: ParsedCell): string {
     if (geom.y != null) geomAttrs.push(`y="${geom.y}"`);
     if (geom.width != null) geomAttrs.push(`width="${geom.width}"`);
     if (geom.height != null) geomAttrs.push(`height="${geom.height}"`);
+  } else {
+    // For relative geometry (edge labels), emit x,y if non-zero
+    if (geom.x != null && geom.x !== 0) geomAttrs.push(`x="${geom.x}"`);
+    if (geom.y != null && geom.y !== 0) geomAttrs.push(`y="${geom.y}"`);
   }
   geomAttrs.push(`as="geometry"`);
   if (geom.relative) geomAttrs.push('relative="1"');
@@ -267,8 +280,14 @@ function serializeCellXml(cell: ParsedCell): string {
       '\n        </Array>';
   }
 
+  // Serialize offset point (for edge labels)
+  let offsetXml = '';
+  if (geom.offset) {
+    offsetXml = `\n        <mxPoint x="${geom.offset.x}" y="${geom.offset.y}" as="offset" />`;
+  }
+
   return `<mxCell ${attrs.join(' ')}>
-      <mxGeometry ${geomAttrs.join(' ')}>${pointsXml}
+      <mxGeometry ${geomAttrs.join(' ')}>${pointsXml}${offsetXml}
       </mxGeometry>
     </mxCell>`;
 }
