@@ -26,8 +26,8 @@ export const CLASS_MIN_HEIGHT = 80;
 export const USECASE_WIDTH = 180;
 export const USECASE_HEIGHT = 60;
 
-export const ACTOR_WIDTH = 120;
-export const ACTOR_HEIGHT = 60;
+export const ACTOR_WIDTH = 70;
+export const ACTOR_HEIGHT = 75;
 
 export const ACTIVITY_WIDTH = 180;
 export const ACTIVITY_HEIGHT = 60;

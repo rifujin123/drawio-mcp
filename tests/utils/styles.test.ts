@@ -80,13 +80,13 @@ describe('styles', () => {
     expect(DECISION_STYLE).toContain('rhombus');
   });
 
-  it('USECASE_STYLE should be ellipse with blue fill', () => {
+  it('USECASE_STYLE should be ellipse with no fill', () => {
     expect(USECASE_STYLE).toContain('ellipse');
-    expect(USECASE_STYLE).toContain('fillColor=#cfe2f3');
+    expect(USECASE_STYLE).toContain('fillColor=none');
   });
 
-  it('ACTOR_STYLE should be bold', () => {
-    expect(ACTOR_STYLE).toContain('fontStyle=1');
+  it('ACTOR_STYLE should be stick figure shape', () => {
+    expect(ACTOR_STYLE).toContain('shape=umlActor');
   });
 
   it('SYSTEM_BOUNDARY_STYLE should be dashed', () => {

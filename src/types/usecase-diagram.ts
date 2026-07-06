@@ -24,6 +24,12 @@ export const UseCaseRelationSchema = z.object({
   type: z.enum(['include', 'extend', 'generalization']),
 });
 
+export const ActorRelationSchema = z.object({
+  from: z.string().min(1),
+  to: z.string().min(1),
+  type: z.enum(['generalization']),
+});
+
 export const SystemBoundarySchema = z.object({
   name: z.string().min(1),
   include: z.array(z.string()).optional().default([]),
@@ -36,6 +42,7 @@ export const UseCaseDiagramInputSchema = z.object({
   useCases: z.array(UseCaseSchema).min(1),
   associations: z.array(UseCaseAssocSchema).optional().default([]),
   relationships: z.array(UseCaseRelationSchema).optional().default([]),
+  actorRelationships: z.array(ActorRelationSchema).optional().default([]),
   systemBoundary: SystemBoundarySchema.optional(),
 });
 
@@ -63,6 +70,12 @@ export interface UseCaseRelation {
   type: 'include' | 'extend' | 'generalization';
 }
 
+export interface ActorRelation {
+  from: string;
+  to: string;
+  type: 'generalization';
+}
+
 export interface SystemBoundary {
   name: string;
   include?: string[];
@@ -75,5 +88,6 @@ export interface UseCaseDiagramInput {
   useCases: UseCase[];
   associations?: UseCaseAssociation[];
   relationships?: UseCaseRelation[];
+  actorRelationships?: ActorRelation[];
   systemBoundary?: SystemBoundary;
 }

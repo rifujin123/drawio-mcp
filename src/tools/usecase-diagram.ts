@@ -6,7 +6,9 @@ import { writeDrawioFile } from '../utils/diagram-writer.js';
 export const drawUseCaseDiagramTool = {
   name: 'draw_usecase_diagram',
   description: `Create a UML use case diagram as a .drawio file.
+Uses proper UML notation: stick figure actors, white ellipses for use cases, dashed rectangle for system boundary.
 Accepts actors, use cases, system boundaries, and relationships (association, include, extend, generalization).
+Also supports actor generalization (actor inheritance).
 Output is a .drawio file that opens in draw.io (diagrams.net).`,
   inputSchema: zodToJsonSchema(UseCaseDiagramInputSchema),
   handler: async (args: unknown) => {
@@ -28,6 +30,7 @@ Output is a .drawio file that opens in draw.io (diagrams.net).`,
             `Use Cases: ${parsed.useCases.length}\n` +
             `Associations: ${parsed.associations?.length ?? 0}\n` +
             `Relationships: ${parsed.relationships?.length ?? 0}\n` +
+            `Actor Generalizations: ${parsed.actorRelationships?.length ?? 0}\n` +
             `File: ${filePath}`,
         },
         {

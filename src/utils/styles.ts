@@ -47,11 +47,11 @@ export const REALIZATION_STYLE = 'endArrow=block;endFill=0;dashed=1;strokeColor=
 
 // ─── Use Case Diagram Styles ──────────────────────────────────
 
-/** Actor (stick figure) — rendered as rectangle with «actor» */
-export const ACTOR_STYLE = 'rounded=0;whiteSpace=wrap;html=1;fillColor=#d9ead3;strokeColor=#274e13;fontFamily=Helvetica;fontSize=12;fontStyle=1;';
+/** Actor (stick figure) — UML-correct shape */
+export const ACTOR_STYLE = 'shape=umlActor;whiteSpace=wrap;html=1;fontFamily=Helvetica;fontSize=12;verticalLabelPosition=bottom;verticalAlign=top;align=center;';
 
-/** Use case — ellipse */
-export const USECASE_STYLE = 'ellipse;whiteSpace=wrap;html=1;fillColor=#cfe2f3;strokeColor=#073763;fontFamily=Helvetica;fontSize=12;';
+/** Use case — white ellipse (UML-correct, no fill) */
+export const USECASE_STYLE = 'ellipse;whiteSpace=wrap;html=1;fillColor=none;strokeColor=#333333;fontFamily=Helvetica;fontSize=12;align=center;';
 
 /** System boundary — large dashed rectangle */
 export const SYSTEM_BOUNDARY_STYLE = 'rounded=0;whiteSpace=wrap;html=1;dashed=1;fillColor=none;strokeColor=#666666;fontFamily=Helvetica;fontSize=14;fontStyle=1;';
@@ -67,6 +67,9 @@ export const EXTEND_STYLE = 'endArrow=open;endFill=0;dashed=1;strokeColor=#33333
 
 /** Use case generalization — hollow triangle */
 export const USECASE_GENERALIZATION_STYLE = 'endArrow=block;endFill=0;strokeColor=#333333;fontFamily=Helvetica;fontSize=12;';
+
+/** Actor generalization — hollow triangle (same visual as use case gen) */
+export const ACTOR_GENERALIZATION_STYLE = 'endArrow=block;endFill=0;strokeColor=#333333;fontFamily=Helvetica;fontSize=12;';
 
 // ─── Activity Diagram Styles ──────────────────────────────────
 

@@ -8,6 +8,7 @@ import {
   INCLUDE_STYLE,
   EXTEND_STYLE,
   USECASE_GENERALIZATION_STYLE,
+  ACTOR_GENERALIZATION_STYLE,
 } from '../utils/styles.js';
 import {
   ACTOR_WIDTH,
@@ -21,20 +22,20 @@ const GAP_X = 80;
 const GAP_Y = 40;
 const ACTOR_COL_X = MARGIN;
 const USECASE_COL_X = MARGIN + ACTOR_WIDTH + GAP_X * 2;
-const BOUNDARY_PADDING = 30;
+const BOUNDARY_PADDING = 25;
+const UC_GRID_GAP_X = 40;
+const UC_GRID_COLS = 2;
 
 /**
- * Builder for UML Use Case Diagrams.
- * Layout: Actors on the left, use cases on the right inside system boundary.
+ * UML Use Case Diagram Builder — proper UML notation.
+ * - Actors: stick figure (shape=umlActor) on left
+ * - Use cases: white ellipses on right inside system boundary
+ * - Supports include/extend/generalization + actor generalization
  */
 export class UseCaseDiagramBuilder extends BaseBuilder {
   private actorIds: Map<string, string> = new Map();
   private useCaseIds: Map<string, string> = new Map();
   private boundaryId: string | null = null;
-
-  // Computed layout dimensions
-  private diagramWidth = 800;
-  private diagramHeight = 600;
 
   constructor(private input: UseCaseDiagramInput) {
     super();
@@ -42,9 +43,9 @@ export class UseCaseDiagramBuilder extends BaseBuilder {
 
   build(): void {
     // Create actors
-    this.input.actors.forEach((actor, i) => {
+    this.input.actors.forEach((actor) => {
       const id = this.addVertex(
-        `${actor.name}`,
+        actor.name,
         ACTOR_STYLE,
         0, 0,
         ACTOR_WIDTH,
@@ -54,7 +55,7 @@ export class UseCaseDiagramBuilder extends BaseBuilder {
     });
 
     // Create use cases
-    this.input.useCases.forEach((uc, i) => {
+    this.input.useCases.forEach((uc) => {
       const id = this.addVertex(
         uc.name,
         USECASE_STYLE,
@@ -109,6 +110,15 @@ export class UseCaseDiagramBuilder extends BaseBuilder {
       }
       this.addEdge(label, style, fromId, toId);
     }
+
+    // Create actor generalizations (child → parent)
+    for (const rel of this.input.actorRelationships ?? []) {
+      const fromId = this.actorIds.get(rel.from);
+      const toId = this.actorIds.get(rel.to);
+      if (fromId && toId) {
+        this.addEdge('', ACTOR_GENERALIZATION_STYLE, fromId, toId);
+      }
+    }
   }
 
   layout(): void {
@@ -116,17 +126,19 @@ export class UseCaseDiagramBuilder extends BaseBuilder {
     const numUCs = this.input.useCases.length;
 
     // Calculate dimensions
-    const ucColWidth = USECASE_WIDTH;
-    const totalWidth = USECASE_COL_X + ucColWidth + MARGIN;
-
-    // Layout actors vertically
     const actorTotalHeight = numActors * ACTOR_HEIGHT + (numActors - 1) * GAP_Y;
-    const ucTotalHeight = numUCs * USECASE_HEIGHT + (numUCs - 1) * GAP_Y;
-    const contentHeight = Math.max(actorTotalHeight, ucTotalHeight);
-    const totalHeight = contentHeight + 2 * MARGIN;
 
-    this.diagramWidth = Math.max(totalWidth, 800);
-    this.diagramHeight = Math.max(totalHeight, 400);
+    // Use cases: single column or 2-column grid
+    const ucCols = (numUCs > 6) ? UC_GRID_COLS : 1;
+    const ucRows = ucCols === 1 ? numUCs : Math.ceil(numUCs / UC_GRID_COLS);
+    const ucTotalWidth = ucCols === 1
+      ? USECASE_WIDTH
+      : UC_GRID_COLS * USECASE_WIDTH + (UC_GRID_COLS - 1) * UC_GRID_GAP_X;
+    const ucTotalHeight = ucRows * USECASE_HEIGHT + (ucRows - 1) * GAP_Y;
+
+    const contentHeight = Math.max(actorTotalHeight, ucTotalHeight);
+    const totalWidth = USECASE_COL_X + ucTotalWidth + MARGIN;
+    const totalHeight = contentHeight + 2 * MARGIN;
 
     // Position actors (vertically centered relative to content)
     const actorStartY = MARGIN + Math.max(0, (contentHeight - actorTotalHeight) / 2);
@@ -142,28 +154,37 @@ export class UseCaseDiagramBuilder extends BaseBuilder {
       }
     });
 
-    // Position use cases
+    // Position use cases (single column or grid)
     const ucStartY = MARGIN + Math.max(0, (contentHeight - ucTotalHeight) / 2);
     this.input.useCases.forEach((uc, i) => {
       const id = this.useCaseIds.get(uc.id);
       if (!id) return;
       const cell = this.cells.find((c) => c.id === id);
-      if (cell?.geometry) {
+      if (!cell?.geometry) return;
+
+      if (ucCols === 1) {
         cell.geometry.x = USECASE_COL_X;
         cell.geometry.y = ucStartY + i * (USECASE_HEIGHT + GAP_Y);
-        cell.geometry.width = USECASE_WIDTH;
-        cell.geometry.height = USECASE_HEIGHT;
+      } else {
+        const col = i % UC_GRID_COLS;
+        const row = Math.floor(i / UC_GRID_COLS);
+        cell.geometry.x = USECASE_COL_X + col * (USECASE_WIDTH + UC_GRID_GAP_X);
+        cell.geometry.y = ucStartY + row * (USECASE_HEIGHT + GAP_Y);
       }
+      cell.geometry.width = USECASE_WIDTH;
+      cell.geometry.height = USECASE_HEIGHT;
     });
 
     // Position system boundary (encloses use cases)
     if (this.boundaryId) {
       const cell = this.cells.find((c) => c.id === this.boundaryId);
       if (cell?.geometry) {
+        const ucAreaWidth = ucTotalWidth + BOUNDARY_PADDING * 2;
+        const ucAreaHeight = ucTotalHeight + BOUNDARY_PADDING * 2;
         cell.geometry.x = USECASE_COL_X - BOUNDARY_PADDING;
-        cell.geometry.y = MARGIN - BOUNDARY_PADDING;
-        cell.geometry.width = USECASE_WIDTH + BOUNDARY_PADDING * 2;
-        cell.geometry.height = contentHeight + BOUNDARY_PADDING * 2;
+        cell.geometry.y = ucStartY - BOUNDARY_PADDING;
+        cell.geometry.width = ucAreaWidth;
+        cell.geometry.height = ucAreaHeight;
       }
     }
   }

@@ -27,7 +27,7 @@ Kết quả: **Bạn tập trung vào thiết kế, AI lo phần trình bày.**
 | Diagram | Ký hiệu đặc biệt |
 |---------|-----------------|
 | **Class Diagram** | Classes, attributes, methods, stereotypes (interface/abstract/enum), 6 loại relationships |
-| **Use Case Diagram** | Actors, use cases, system boundary, include/extend/generalization |
+| **Use Case Diagram** | Stick figure actors, white ellipse use cases, system boundary, include/extend/generalization, actor generalization |
 | **Activity Diagram** | Start/end (bullseye), action, decision, merge, fork/join, swimlanes, backward edges, labeled flows |
 | **Sequence Diagram** | Participants (actor/boundary/control/entity), lifelines, activation bars, self-loops, 5 message types |
 
@@ -217,7 +217,7 @@ Relationships:
 System boundary: "ATM System" bao gồm tất cả use cases
 ````
 
-Kết quả: Actors bên trái, use cases bên phải trong system boundary.
+Kết quả: Stick figure actors bên trái, white ellipse use cases bên phải trong system boundary. Đúng ký hiệu UML chuẩn.
 
 ### 3. Activity Diagram
 
