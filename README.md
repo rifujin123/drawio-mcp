@@ -138,8 +138,24 @@ Sau khi cấu hình, restart IDE. Tools sẽ xuất hiện trong danh sách MCP 
 | `draw_usecase_diagram` | Create use case diagram |
 | `draw_activity_diagram` | Create activity diagram |
 | `draw_sequence_diagram` | Create sequence diagram |
+| `read_diagram_file` | Read & parse existing .drawio file — xem cấu trúc cells, positions, labels, connections |
+| `update_diagram_file` | Modify existing .drawio file — move, resize, relabel, add/remove cells, thêm edges |
 
-Sau khi gọi, mỗi tool tạo file `.drawio` trong thư mục `./output/` và trả về đường dẫn file.
+**Read + Update flow:**
+
+```
+1. draw_activity_diagram(...)  → sinh file
+2. read_diagram_file({ file_path: "activity-diagram-xxx.drawio" })  → xem cell IDs
+3. update_diagram_file({
+     file_path: "activity-diagram-xxx.drawio",
+     operations: [
+       { type: "move_by", cellId: "4", dx: 50, dy: 0 },
+       { type: "relabel", cellId: "4", value: "New Label" },
+     ]
+   })  → sửa file, không cần tạo mới
+```
+
+Sau khi gọi tool tạo/sửa, file `.drawio` được ghi vào thư mục `./output/`.
 
 ---
 

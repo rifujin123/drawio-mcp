@@ -20,12 +20,16 @@ import { drawClassDiagramTool } from './tools/class-diagram.js';
 import { drawUseCaseDiagramTool } from './tools/usecase-diagram.js';
 import { drawActivityDiagramTool } from './tools/activity-diagram.js';
 import { drawSequenceDiagramTool } from './tools/sequence-diagram.js';
+import { readDiagramFileTool } from './tools/read-diagram.js';
+import { updateDiagramFileTool } from './tools/update-diagram.js';
 
 const tools = [
   drawClassDiagramTool,
   drawUseCaseDiagramTool,
   drawActivityDiagramTool,
   drawSequenceDiagramTool,
+  readDiagramFileTool,
+  updateDiagramFileTool,
 ];
 
 const server = new Server(
