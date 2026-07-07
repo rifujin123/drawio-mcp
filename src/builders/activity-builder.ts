@@ -20,15 +20,15 @@ const ACTION_W = 180;
 const ACTION_H = 50;
 const DECISION_W = 120;
 const DECISION_H = 80;
-const FORK_W = 300;
+const FORK_W = 150;
 const FORK_H = 8;
 const MERGE_W = 120;
 const MERGE_H = 80;
-const NODE_GAP_X = 40;
+const NODE_GAP_X = 50;
 const NODE_GAP_Y = 30;
-const LEVEL_HEIGHT = 90;    // ACTION_H + NODE_GAP_Y + extra margin
+const LEVEL_HEIGHT = 100;
 const MARGIN = 60;
-const SWIMLANE_WIDTH = 260;
+const SWIMLANE_PADDING = 20;
 const SWIMLANE_HEADER_H = 40;
 const BACKWARD_OFFSET_X = 30;
 const BACKWARD_PADDING = 10;
@@ -102,6 +102,31 @@ function getNodeDimensions(node: ActivityNode): { w: number; h: number } {
 }
 
 /**
+ * Estimate pixel width of text at 12pt Helvetica (~6.5px per char).
+ */
+function estimateTextWidth(text: string): number {
+  return text.length * 6.5 + 20; // +20 for inner padding
+}
+
+/**
+ * Get effective node width: max of type's default width and label text width.
+ * Capped at 350px to avoid absurdly wide nodes.
+ */
+function getEffectiveNodeWidth(node: ActivityNode): number {
+  const dims = getNodeDimensions(node);
+  if (!node.label) return dims.w;
+  const textW = estimateTextWidth(node.label);
+  return Math.max(dims.w, Math.min(textW, 350));
+}
+
+/**
+ * Get effective node height (delegates to type-based, no text scaling for now).
+ */
+function getEffectiveNodeHeight(node: ActivityNode): number {
+  return getNodeDimensions(node).h;
+}
+
+/**
  * Builder for UML Activity Diagrams.
  *
  * Supports topological-layered layouts, swimlanes,
@@ -162,16 +187,15 @@ export class ActivityDiagramBuilder extends BaseBuilder {
     // Sort levels
     const sortedLevels = [...levelGroups.keys()].sort((a, b) => a - b);
 
-    // Calculate canvas width from widest level
+    // Calculate canvas width from widest level (using effective width)
     let canvasWidth = CANVAS_DEFAULT_W;
     for (const lvl of sortedLevels) {
       const group = levelGroups.get(lvl)!;
       let rowW = 0;
       for (const node of group) {
-        const { w } = getNodeDimensions(node);
-        rowW += w + NODE_GAP_X;
+        rowW += getEffectiveNodeWidth(node) + NODE_GAP_X;
       }
-      rowW -= NODE_GAP_X; // last item has no trailing gap
+      rowW -= NODE_GAP_X;
       canvasWidth = Math.max(canvasWidth, rowW + MARGIN * 2);
     }
 
@@ -179,11 +203,10 @@ export class ActivityDiagramBuilder extends BaseBuilder {
       const group = levelGroups.get(lvl)!;
       const y = MARGIN + lvl * LEVEL_HEIGHT;
 
-      // Calculate total width of this row
+      // Calculate total width of this row (using effective width)
       let rowW = 0;
       for (const node of group) {
-        const { w } = getNodeDimensions(node);
-        rowW += w + NODE_GAP_X;
+        rowW += getEffectiveNodeWidth(node) + NODE_GAP_X;
       }
       rowW -= NODE_GAP_X;
 
@@ -191,7 +214,8 @@ export class ActivityDiagramBuilder extends BaseBuilder {
       let cursorX = startX;
 
       for (const node of group) {
-        const { w, h } = getNodeDimensions(node);
+        const w = getEffectiveNodeWidth(node);
+        const h = getEffectiveNodeHeight(node);
         this.positionNode(node, cursorX, y, w, h);
         cursorX += w + NODE_GAP_X;
       }
@@ -199,7 +223,7 @@ export class ActivityDiagramBuilder extends BaseBuilder {
   }
 
   private layoutWithSwimlanes(): void {
-    const { nodes, swimlanes } = this.input;
+    const { nodes, swimlanes, flows } = this.input;
 
     // Build node → laneIndex mapping
     const laneIndex = new Map<string, number>();
@@ -213,27 +237,108 @@ export class ActivityDiagramBuilder extends BaseBuilder {
     const levelGroups = this.groupByLevel(nodes);
     const sortedLevels = [...levelGroups.keys()].sort((a, b) => a - b);
 
-    for (const lvl of sortedLevels) {
-      const group = levelGroups.get(lvl)!;
+    const numLanes = (swimlanes ?? []).length;
 
-      for (const node of group) {
+    // ── Step 1: Calculate lane widths considering parallel nodes ──
+    // For each (lane, level) group, calculate total width needed for all parallel nodes side-by-side.
+    const laneLevelWidths = new Map<string, number>(); // key = "li:level"
+    for (const lvl of sortedLevels) {
+      const grp = levelGroups.get(lvl)!;
+      // Group by lane
+      const byLane = new Map<number, typeof grp>();
+      for (const node of grp) {
         const li = laneIndex.get(node.id) ?? 0;
-        const { w, h } = getNodeDimensions(node);
-        const x = MARGIN + li * SWIMLANE_WIDTH + (SWIMLANE_WIDTH - w) / 2;
-        const y = MARGIN + SWIMLANE_HEADER_H + lvl * LEVEL_HEIGHT;
-        this.positionNode(node, x, y, w, h);
+        if (!byLane.has(li)) byLane.set(li, []);
+        byLane.get(li)!.push(node);
+      }
+      for (const [li, laneNodes] of byLane) {
+        let totalW = 0;
+        for (const n of laneNodes) totalW += getEffectiveNodeWidth(n);
+        totalW += (laneNodes.length - 1) * NODE_GAP_X;
+        laneLevelWidths.set(`${li}:${lvl}`, totalW);
       }
     }
 
-    // Draw swimlane background rectangles
+    // Lane width = max(level width for this lane, fork/join min width)
+    const laneWidths = new Array<number>(numLanes).fill(0);
+    for (let i = 0; i < numLanes; i++) {
+      for (const [key, w] of laneLevelWidths) {
+        if (key.startsWith(`${i}:`)) {
+          laneWidths[i] = Math.max(laneWidths[i], w);
+        }
+      }
+      laneWidths[i] = Math.max(laneWidths[i], FORK_W + SWIMLANE_PADDING * 2);
+    }
+
+    // ── Step 2: Collect fork/join IDs for centering (fixed FORK_W) ──
+    const forkJoinIds = new Set<string>();
+    for (const node of nodes) {
+      if (node.type === 'fork' || node.type === 'join') forkJoinIds.add(node.id);
+    }
+
+    // ── Step 3: Position nodes ──
+    for (const lvl of sortedLevels) {
+      const grp = levelGroups.get(lvl)!;
+      const y = MARGIN + SWIMLANE_HEADER_H + lvl * LEVEL_HEIGHT;
+
+      // Group by lane
+      const byLane = new Map<number, typeof grp>();
+      for (const node of grp) {
+        const li = laneIndex.get(node.id) ?? 0;
+        if (!byLane.has(li)) byLane.set(li, []);
+        byLane.get(li)!.push(node);
+      }
+
+      for (const [li, laneNodes] of byLane) {
+        // Compute lane start X
+        let laneStartX = MARGIN;
+        for (let j = 0; j < li; j++) laneStartX += laneWidths[j];
+
+        if (laneNodes.length === 1) {
+          // Single node — center in lane
+          const node = laneNodes[0];
+          const w = getEffectiveNodeWidth(node);
+          const h = getEffectiveNodeHeight(node);
+          const x = laneStartX + (laneWidths[li] - w) / 2;
+          this.positionNode(node, x, y, w, h);
+        } else {
+          // Multiple parallel nodes — distribute horizontally with gaps
+          let totalW = 0;
+          for (const node of laneNodes) totalW += getEffectiveNodeWidth(node);
+          totalW += (laneNodes.length - 1) * NODE_GAP_X;
+
+          let cursorX = laneStartX + (laneWidths[li] - totalW) / 2;
+          for (const node of laneNodes) {
+            const w = getEffectiveNodeWidth(node);
+            const h = getEffectiveNodeHeight(node);
+            this.positionNode(node, cursorX, y, w, h);
+            cursorX += w + NODE_GAP_X;
+          }
+        }
+      }
+    }
+
+    // ── Step 4: Center fork/join bars in their lanes (fixed FORK_W, not spanning) ──
+    for (const id of forkJoinIds) {
+      const cell = this.cells.find((c) => c.id === this.nodeIds.get(id));
+      if (!cell?.geometry) continue;
+      const li = laneIndex.get(id) ?? 0;
+      let laneStartX = MARGIN;
+      for (let j = 0; j < li; j++) laneStartX += laneWidths[j];
+      cell.geometry.x = laneStartX + (laneWidths[li] - FORK_W) / 2;
+      cell.geometry.width = FORK_W;
+      cell.geometry.height = FORK_H;
+    }
+
+    // ── Step 5: Draw swimlane background rectangles ──
     const maxLevel = sortedLevels.length > 0 ? sortedLevels[sortedLevels.length - 1] : 0;
     const laneHeight = MARGIN + SWIMLANE_HEADER_H + (maxLevel + 1) * LEVEL_HEIGHT + MARGIN;
 
+    let cursorX = MARGIN;
     for (let i = 0; i < (swimlanes ?? []).length; i++) {
       const lane = swimlanes![i];
-      const x = MARGIN + i * SWIMLANE_WIDTH;
-      // Insert swimlane background at the right position in the cells array
-      this.addVertex(lane.name, SWIMLANE_STYLE, x, MARGIN, SWIMLANE_WIDTH, laneHeight);
+      this.addVertex(lane.name, SWIMLANE_STYLE, cursorX, MARGIN, laneWidths[i], laneHeight);
+      cursorX += laneWidths[i];
     }
   }
 
@@ -249,6 +354,9 @@ export class ActivityDiagramBuilder extends BaseBuilder {
       }
     }
 
+    // Track branch count per decision node for side routing
+    const decisionBranch = new Map<string, number>();
+
     for (const flow of flows) {
       const fromId = this.nodeIds.get(flow.from);
       const toId = this.nodeIds.get(flow.to);
@@ -261,6 +369,9 @@ export class ActivityDiagramBuilder extends BaseBuilder {
       const fromLevel = this.levels.get(flow.from) ?? 0;
       const toLevel = this.levels.get(flow.to) ?? 0;
       const label = flow.label ?? '';
+
+      // Find source node type from input
+      const fromNode = this.input.nodes.find((n) => n.id === flow.from);
 
       if (flow.from === flow.to) {
         // ── Self-loop (U-turn around the node) ──
@@ -290,6 +401,38 @@ export class ActivityDiagramBuilder extends BaseBuilder {
           { x: toX - 5, y: toCell.geometry.y - BACKWARD_PADDING },
         ];
         this.addEdgeWithPoints(label, ACTIVITY_FLOW_STYLE, fromId, toId, waypoints);
+      } else if (fromNode && (fromNode.type === 'decision' || fromNode.type === 'merge')) {
+        // ── Decision/Merge node: route branches from sides ──
+        const branch = decisionBranch.get(flow.from) ?? 0;
+        decisionBranch.set(flow.from, branch + 1);
+
+        const cx = fromCell.geometry.x + fromCell.geometry.width / 2;
+        const cy = fromCell.geometry.y + fromCell.geometry.height / 2;
+        const sideGap = 50;
+        const targetY = toCell.geometry.y;
+        const targetCX = toCell.geometry.x + toCell.geometry.width / 2;
+
+        if (branch === 0) {
+          // First branch: exit from right side → right → down → target center
+          const exitX = fromCell.geometry.x! + fromCell.geometry.width!;
+          const turnX = Math.max(exitX + sideGap, targetCX + sideGap);
+          this.addEdgeWithPoints(label, ACTIVITY_FLOW_STYLE, fromId, toId, [
+            { x: exitX, y: cy },
+            { x: turnX, y: cy },
+            { x: turnX, y: targetY },
+            { x: targetCX, y: targetY },
+          ]);
+        } else {
+          // Second branch: exit from left side → left → down → target center
+          const exitX = fromCell.geometry.x!;
+          const turnX = Math.min(exitX - sideGap, targetCX - sideGap);
+          this.addEdgeWithPoints(label, ACTIVITY_FLOW_STYLE, fromId, toId, [
+            { x: exitX, y: cy },
+            { x: turnX, y: cy },
+            { x: turnX, y: targetY },
+            { x: targetCX, y: targetY },
+          ]);
+        }
       } else {
         // Normal forward edge
         this.addEdge(label, ACTIVITY_FLOW_STYLE, fromId, toId);
